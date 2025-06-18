@@ -21,7 +21,7 @@ pip install -r requirements.txt
 
 2️⃣ Run the app:
 
-python psa.py
+python scraper.py
 
 3️⃣ Steps in the app:
 
