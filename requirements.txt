@@ -1,3 +1,4 @@
 undetected-chromedriver
-beautifulsoup4
 selenium
+beautifulsoup4
+pandas
