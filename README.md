@@ -22,7 +22,7 @@ pip install -r requirements.txt
 
 2️⃣ Run the app:
 
-python skraper.py
+python scraper.py
 
 3️⃣ Steps in the app:
 
