@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 import json
 import os
 import time
+import pandas as pd
 from bs4 import BeautifulSoup
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -80,7 +81,6 @@ def parse_products_from_html(html_source):
                 total_sold = "N/A"
                 monthly_sold = "N/A"
 
-            # for sorting — take the greater of the two
             sold_val = max(clean_sold_value(total_sold), clean_sold_value(monthly_sold))
 
             results.append({
@@ -97,10 +97,12 @@ def parse_products_from_html(html_source):
 
     return results
 
-def scroll_page(driver, scroll_times=5):
-    for _ in range(scroll_times):
-        driver.execute_script("window.scrollBy(0, document.body.scrollHeight);")
-        time.sleep(2)
+def scroll_page(driver, total_scroll=5000, step=200, delay=0.4):
+    current = 0
+    while current < total_scroll:
+        driver.execute_script(f"window.scrollBy(0, {step});")
+        time.sleep(delay)
+        current += step
 
 def start_scraper_gui(keyword, treeview, results_holder, saved_dropdown):
     for row in treeview.get_children():
@@ -126,21 +128,20 @@ def start_scraper_gui(keyword, treeview, results_holder, saved_dropdown):
         time.sleep(5)
 
         try:
-            # Click "Top Sales" button after search
             top_sales_button = driver.find_element(By.XPATH, "//button[span[contains(text(), 'Top Sales')]]")
             driver.execute_script("arguments[0].click();", top_sales_button)
-            print("✅ Top Sales clicked.")
+            print("\u2705 Top Sales clicked.")
             time.sleep(3)
         except Exception as e:
-            print("⚠️ Could not click Top Sales button:", str(e))
+            print("\u26a0\ufe0f Could not click Top Sales button:", str(e))
 
         results = []
 
-        for page_num in range(0, 3):  # Page 0,1,2
+        for page_num in range(0, 3):
             url = f"https://shopee.ph/search?keyword={keyword}&page={page_num}&sortBy=sales"
             driver.get(url)
             time.sleep(8)
-            scroll_page(driver, scroll_times=5)
+            scroll_page(driver, total_scroll=5000, step=200, delay=0.4)
             save_debug_html(driver)
             html_source = driver.page_source
             new_results = parse_products_from_html(html_source)
@@ -149,7 +150,6 @@ def start_scraper_gui(keyword, treeview, results_holder, saved_dropdown):
 
         driver.quit()
 
-        # Deduplicate
         unique_links = set()
         final_results = []
         for item in results:
@@ -183,6 +183,15 @@ def save_results(keyword, results):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     messagebox.showinfo("Saved", f"Results saved as '{keyword}'")
+
+def export_to_excel(keyword, results):
+    if not results:
+        messagebox.showwarning("No Data", "Nothing to export.")
+        return
+    df = pd.DataFrame(results)
+    path = os.path.join(SAVED_DIR, f"{keyword}.xlsx")
+    df.to_excel(path, index=False)
+    messagebox.showinfo("Exported", f"Results exported to Excel: '{keyword}.xlsx'")
 
 def load_saved_keywords():
     return [f[:-5] for f in os.listdir(SAVED_DIR) if f.endswith(".json")]
@@ -218,18 +227,28 @@ def delete_saved_record(selected_keyword, saved_dropdown):
         messagebox.showerror("Not Found", "Selected save not found.")
 
 def add_cookies_mode():
-    options = uc.ChromeOptions()
-    driver = uc.Chrome(options=options)
-    driver.get("https://shopee.ph")
+    popup = tk.Toplevel()
+    popup.title("Login Required")
+    popup.geometry("300x150")
+    popup.configure(bg="#1e1e1e")
 
-    print("🚪 Please log in to Shopee manually.")
-    input("✅ Press Enter after you're logged in...")
+    tk.Label(popup, text="Please login to Shopee manually\nand then click continue", bg="#1e1e1e", fg="white", font=("Segoe UI", 10)).pack(pady=20)
 
-    cookies = driver.get_cookies()
-    with open(COOKIES_FILE, "w", encoding="utf-8") as f:
-        json.dump(cookies, f, indent=4)
-    print("✅ Cookies saved to 'shopee_cookies.json'")
-    driver.quit()
+    def proceed():
+        popup.destroy()
+        options = uc.ChromeOptions()
+        driver = uc.Chrome(options=options)
+        driver.get("https://shopee.ph")
+        messagebox.showinfo("Waiting", "You have 60 seconds to login.")
+        time.sleep(60)
+        cookies = driver.get_cookies()
+        with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+            json.dump(cookies, f, indent=4)
+        print("✅ Cookies saved to 'shopee_cookies.json'")
+        driver.quit()
+        messagebox.showinfo("Done", "Cookies saved. You may now scrape.")
+
+    tk.Button(popup, text="Continue", command=proceed, bg="#4caf50", fg="white", font=("Segoe UI", 10)).pack()
 
 def build_gui():
     welcome = tk.Tk()
@@ -322,6 +341,9 @@ def build_main_gui():
 
     tk.Button(input_frame, text="Save Results", command=lambda: save_results(keyword_entry.get().strip(), results_holder),
               bg="#009688", fg="white", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=5)
+
+    tk.Button(input_frame, text="Export to Excel", command=lambda: export_to_excel(keyword_entry.get().strip(), results_holder),
+              bg="#00bcd4", fg="white", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=5)
 
     saved_dropdown = ttk.Combobox(input_frame, state="readonly", values=load_saved_keywords())
     saved_dropdown.set("Saved ▼")
